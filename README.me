@@ -1,0 +1,30 @@
+Files that need to be copied to external folder locations before building sketches:
+
+MyRadio_NRF24.h  	(C:/Users/me/Documents/Arduino/libraries/MyMySensors/MyRadio_NRF24.h)
+RF24.cpp			(C:\Users\Me\Documents\Arduino\libraries\MySensors\hal\transport\RF24\driver/RF24.cpp )
+MyTransport.cpp 	(C:\Users\Me\Documents\Arduino\libraries\MySensors\core/MyTransport.cpp)
+
+
+File "MyRadio_NRF24.h"  contains the PAN id and other RF related items such as PA-Level and Frequency.
+Place the file in a "fake" library folder so that the arduinon IDE can include it from the various sketches.
+All sketches must include the same file. After placing the file, make a link in the sketch folders to access the file conveniently.
+
+
+	File  C:/user/me/Documents/Arduino/libraries/MyMySensors/MyRadio_NRF24.h
+
+
+File "RF24.cpp" has the modified function "RF24_sendMessage()" that allows the IRQ line to be used during transmission to detect 
+when the transmission of a packet is complete, without hammering on the SPI bus constantly. This reduces noise and allows the 
+receiver to catch the HW ack signal sent by the reciving node.
+
+Copy the file RF24.cpp to the active MySensor library for the Arduino IDE. The "#define MY_RF24_IRQ_PIN (2)" controls the use of this feature.
+
+Path for the MySensor library 2.3:
+	C:\Users\Me\Documents\Arduino\libraries\MySensors\hal\transport\RF24\driver/RF24.cpp 
+ 
+File "MyTransport.cpp" has a modified  function "transportProcessMessage(void)" to insert a 2ms delay for rx/tx turn around time 
+between the reception of a package and the sending out of the ACK for it. See line 706-712. Without this delay the Serial Gateway 
+will intermittendly miss receiving the ack pakage. Change only affetcs networks with RF24 hardware. 
+
+Path for the MySensor library 2.3:
+	C:\Users\Me\Documents\Arduino\libraries\MySensors\core/MyTransport.cpp
