@@ -1,4 +1,4 @@
-/* WIRE_TRIP and PIR Sensor node for MySensor library  V2.3.1 and built under Arduino 2.0.4
+/* WIRE_TRIP and PIR Sensor node for MySensor library  >= V2.3.2 and built under Arduino >= 1.8.19
 
   MySensor Node application for wire trip or PIR sensor running on Mega328P powered by 2 AA  Lithium or  2AA Alkaline cells for > 2years.
 	Standby current consumption is ~< 18uA due to the 200kohm pull up resistor on the signal pin.
@@ -39,23 +39,7 @@
 */
 #include <EEPROM.h>   // for the node id storage
 
-// Over-arching include file enables NRF24 transport and contains the PAN_ID plus channel number and other vital parameters of the PAN
-#include "MyRadio_NRF24.h"  // This file resides in a "fake" library "~/Arduino/library/MyMYsenors" so that it can be included by all the nodes of th PAN 
-                            // It needs to be included before MySensor.h
-#undef  MY_RF24_IRQ_PIN  // for nodes not having the IRQ line from the radio connected to IRQ0 (pin2)
-//#define MY_DEBUG          // turns on Mysensor library debug output -- see other debug defines in MyRadio_NRF24.h
-
-#define SKETCH_VERSION "1.6"
-#define PIR           // For PIR sensor devices -- comment out for Wiretrip
-
-//#define AC_POWERED  // for non Battery nodesrunning from AC and having the CPU running at 5V/16mhz
-                      // undefine AC_POWERED for battery operation 
-//#define STATUS_TOGGLE // for fast and noisy switches, such as IR barrier where the contact pulse cand be only a few millsoconds long and
-                      // therefore the open/closed status is transient in nature.  It transmits an open/closed transitio each time the contact changes
-                      
-#ifdef PIR
-#undef STATUS_TOGGLE  // the PIR sensor has an ON delay built in, adjustable with potentiometer
-#endif                       
+#include "Sensor_config.h"  // local configuration for items concerning this sensor only
 
 
 
@@ -81,27 +65,33 @@
   #endif  
 #else
   #define MY_RF24_PA_LEVEL RF24_PA_HIGH
-  #define BATTERY_REPORT_INTERVAL 20
-  #ifdef PIR
+   #ifdef PIR
     const char *sketch = "BAT-PIR-Sensor";
-    
-  #else
+     #define BATTERY_REPORT_INTERVAL 24
+   #else
     const char *sketch = "BAT-Trip-Sensor";
+    #define BATTERY_REPORT_INTERVAL 1
   #endif
 #endif
 
 // do not move this further up 
 #include <MySensors.h>      // Requires MySensor v2.3.1 or higher  -- must follow include file MyRadio_NRF24
 #ifdef MY_REPEATER_FEATURE 
-#error Not comaptible with Reapeater mode
+#error This node is not comaptible with Reapeater mode
 #endif
+
 #define CHILD_1 1
+MyMessage msg(CHILD_1, V_TRIPPED);
+
+#ifdef WITH_SWITCH
+MyMessage msg2(CHILD_2, V_STATUS);   
+#endif
 
 #define BATTERY_SENSOR_ANALOG_PIN 7// ADC7, Mega328P device pin 22, this is ANALOG pin 7
 #define BATTERY_V_DIV_GND_PIN	  7	 // PD7, Mega328P device pin 11, this is DIGITAL pin 7  	
 
 #define SWITCH_PIN BATTERY_V_DIV_GND_PIN  // This is the same as the BATTERY_V_DIF_GND_PIN.  battery measure voltage divider serves as the pull-up for the switch
-#define LED_PIN		 			    8	    // PB0, Mega328P device pin 12
+#define LED_PIN		 		   8	// PB0, Mega328P device pin 12
 #define Signal_PIN 		  	  14    // PC0, aka ADC0, aka A0, Mega328P device pin 23  -- Do not move this pin -- Pin-Change code below sets up PC0 as input
 
 
@@ -109,50 +99,64 @@
 #define ADC_BATTERY_DIV  (3.125f)     // external voltage divider ratio 1M:470K
 #define BATTERY_EMPTY (2.6f)
 #define BATTERY_FULL  (3.15f)		    // A brand new Alkaline battery has about 1.6V 
-//#define BATTERY_REPORT_INTERVAL 1 // report the battery status only every nth cycle for lower power consumption on trip wire with door or window switch
-// already defined above 						// set this number to low number or 1 if there is no door or window switch in the trip wire that frequently activates the node
+//#define BATTERY_REPORT_INTERVAL 1 	// report the battery status only every nth cycle for lower power consumption on trip wire with door or window switch
+// already defined above 			 	// set this number to low number or 1 if there is no door or window switch in the trip wire that frequently activates the node
 
 
 #define RED_LED_ON  {pinMode(LED_PIN, OUTPUT);digitalWrite(LED_PIN, HIGH);}  
 #define BLUE_LED_ON {pinMode(LED_PIN, OUTPUT); digitalWrite(LED_PIN, LOW);} // blue 
 #define LEDS_OFF    {pinMode(LED_PIN, INPUT);} // red LED
 
-MyMessage msg(CHILD_1, V_TRIPPED);
+
 
 // Pin change interrupt to capture the event from the sensor
-static  short AlarmInstances = 0; // init so that it sends the battery status on first alarm after startup
-
+static  short AlarmInstances = 0;     // init so that it sends the battery status on first alarm after startup
+static byte Signal_pin_Changed = 0;   // Flag to allow operation without sleep in main loop 
 ISR(PCINT1_vect)  // ISR for pinchange interrupt on port C
 {
-	// nothing to do except to wake up the cpu from sleep
+	  Signal_pin_Changed=true;
 }
 //  presentation callback function for Mysensors
 void presentation()  //  is called when the controller requests info about the nature of the device 
 {
 
 // Send the sketch version information to the Gateway and Controller
-  Serial.print("Sending Sketch name ");
-  Serial.println(sketch);
   sendSketchInfo(sketch, SKETCH_VERSION);
  // Register all sensors to gateway (they will be created as child devices)
  #ifdef PIR
   present(CHILD_1, S_MOTION,"PIR",false);   // gives the sensor a meaningfull name so that domotics can display something upon discovery
  #else
-  present(CHILD_1, S_MOTION,"Trip",false);   // gives the sensor a meaningfull name so that domotics can display something upon discovery
+  present(CHILD_1, S_MOTION,"Wire-Trip",false);   // gives the sensor a meaningfull name so that domotics can display something upon discovery
+#endif
+
+#ifdef WITH_SWITCH
+  present(CHILD_2, S_BINARY, "Switch",false);
 #endif
 }
 
 // before callback funtion for Mysensors
 void before()		// executes before the radio starts up
 {
-
+  Serial.print(sketch); Serial.print(": ");
+  Serial.println(SKETCH_VERSION );
+#ifdef WITH_SWITCH
+  Serial.println("With Switch");  
+#endif
+ // Serial.print("Mysensor Version: ");   // already printed our by library logo print
+ // Serial.println(MYSENSORS_LIBRARY_VERSION);
   Serial.println("Device Startup... waiting for network");
   RED_LED_ON;
   delay (50);
   LEDS_OFF;
   
   pinMode(SWITCH_PIN, INPUT); // Not INPUT_PULLUP since this is also the voltage divider gnd pin for the battery measurment and therefore has a pullup resistor on the HW
-  
+
+#ifdef WITH_SWITCH
+  // for switch output
+  digitalWrite(RELAY_PIN, 0);
+  pinMode(RELAY_PIN, OUTPUT);
+#endif  
+
   // Erasing the EEprom of the chip -- Node will loose it's ID number, Gateway and Controller will furnish a new ID number
   if (digitalRead( SWITCH_PIN ) == 0 )
   {
@@ -165,10 +169,13 @@ void before()		// executes before the radio starts up
   }
   BLUE_LED_ON;  // white or blue LED
    // between "before" and "setup" the radio and network is beeing initialized by MySensor lib.
+   
+
 }
 void setup() // after Radio connected 
 {
   
+
   if ( ! isTransportReady()) // if the init of the network failed because of timing out do to missing gateway controller. 
   {
     Serial.print("\nNo network to connect to -- STOP\n");
@@ -210,15 +217,20 @@ void setup() // after Radio connected
 #ifdef AC_POWERED
   pinMode(Signal_PIN, INPUT_PULLUP);  // for AC nodes -- pull up faster with internal 35Ko resistor  
 #else
+#ifndef PIR
+  Serial.println("Battery pwrd nodes need external 200K pullup");
+#endif  
   pinMode(Signal_PIN, INPUT);       // PC0, aka A0, aka digital pin14, aka device pin23  -- INPUT without pullup to trigger alarm when external wire to gnd is broken
-                                    // built in pullup is about 35Ko, This draws about 95us from the 3.0V battery constantly. Use external 200Ko resistor to reduce the 
+#endif                              // built in pullup is about 35Ko, This draws about 95us from the 3.0V battery constantly. Use external 200Ko resistor to reduce the 
                                     // constant current load for an unbroken trip wire. 
-#endif
-  // enable the pin change interrupt for PC0, aka, A0, aka pin14
-  PCMSK1 |= 1 << PCINT8; // enable PCinterupt 8 , aka PC0, aka A0
+
+  // now enable the pin change interrupt for PC0, 
+  PCMSK1 |= 1 << PCINT8; // enable PCinterupt 8 , aka PC0, aka A0, aka pin14
   PCICR  |= 1 << PCIE1; // enable PCinterupt 1 vector
 
-  
+#ifdef WITH_SWITCH                                    
+  request(CHILD_2, V_STATUS);       // sync the switch with the current state in the controller
+#endif
 }
 
 
@@ -234,10 +246,15 @@ void loop()
 
   // The NODE sleeps here until pin-change happens -- This requires a 328P as in a PicoPower device 
   // Pinchnage interrupt on portC pin is discretly enabled in the setup(). 
-  sleep(0);  // sleep(0) got fixed for 2.3.2
-	 
-  // when "HERE" the node woke up because of the pin change interrupt
 
+#ifndef AC_POWERED // if battery powered we go to sleep here until woken up by pinchange 
+  sleep(0);  // sleep(0) got fixed for 2.3.2 version of MySensor
+  // when "HERE" the node woke up because of the pin change interrupt
+#endif
+
+ if ( Signal_pin_Changed == false)  // this is for the non sleep case where we contineously loop so we can receive switch commands from the controller
+  return;
+ 
  #ifdef STATUS_TOGGLE
     Serial.print("Tripped\n");
     
@@ -247,7 +264,7 @@ void loop()
       ack_fail++;
       
     // wait a bit, then send the off state    
-    delay(500);
+    delay(1000);
     msg.set(0); 
     if (!send(msg, false))    
       ack_fail++;
@@ -292,7 +309,7 @@ void loop()
     digitalWrite(BATTERY_V_DIV_GND_PIN, LOW);   // bottom of V-divider for battery measurement
     pinMode(BATTERY_V_DIV_GND_PIN, OUTPUT);     // activate the voltage divider by pulling the low end to GND
 
-    BLUE_LED_ON;	// white LED on for battery load
+    BLUE_LED_ON;	// LED on for battery load
 	  delay(500);  // for cap charge up
 
     ADC_count = analogRead(BATTERY_SENSOR_ANALOG_PIN);
@@ -302,24 +319,41 @@ void loop()
 	  Serial.print(BatteryV);
 	  Serial.print(", ");
     BatteryPcnt = 100 * (BatteryV - BATTERY_EMPTY) / (BATTERY_FULL - BATTERY_EMPTY);
-	  Serial.println(BatteryPcnt);
-
-    if (BatteryPcnt > 100 )
+	  if (BatteryPcnt > 100 )
       BatteryPcnt = 100;
 
     if (BatteryPcnt < 0 )
       BatteryPcnt = 0;
-
+    Serial.println(BatteryPcnt);
     pinMode(BATTERY_V_DIV_GND_PIN, INPUT);      // deactivate the voltage divider by letting it float
 
     sendBatteryLevel(BatteryPcnt);
     
   }
-
+  Signal_pin_Changed = false;   // reset the flag now that the alarm signal pin change has been processed
 }
 
+#ifdef WITH_SWITCH
+// function to receive switch commands from the controller
+void receive(const MyMessage &message)
+{
+	// We only expect one type of message from controller. But we better check anyway.
+  if (message.isAck())
+  {
+    Serial.println("This is an ack from the gateway");
+  }
+  else if (message.type == V_STATUS && message.sensor == CHILD_2 )
+  {
+    Serial.print("Incoming msg for Relay:");
+    Serial.print(", New status: ");
+    Serial.println(message.getBool());
+    digitalWrite(RELAY_PIN, message.getBool()); // change relay state
+  }
+  else 
+  {
+    Serial.print("Unknown message received");
+    Serial.println(message.type);    
+  }
+}
 
-
-
-
-
+#endif

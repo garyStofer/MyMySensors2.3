@@ -706,9 +706,15 @@ void transportProcessMessage(void)
 			
 #ifdef MY_RADIO_RF24		
 			// RX/TX turnaround time 
-			// on a RF24 network the serial GW does not reliably receive the ACK and fails the transmission if no delay here. R
-			// a 2 ms delay seems to be enough, howeve using 4 for good measure.
-			wait(2);		
+			// on a RF24 network the serial GW does not reliably receive the ACK and fails the transmission if no delay here. 
+			// This failure to receive the HW ack causes the GW to send the message again about 2.5ms later 
+			// a >2.5 ms delay seems to be enough, however using 4 for good measure. -- both wait and delay seem to work equally well
+			// the failure to receive the HW ack seens to be realted to the HW on the nodes -- Be it that the timing of the 
+			// ACK reply is not per spec or simply not happening at all the GW then sends out an other package which then collides 
+			// with the nodes protocol ack message .... this happens until 16 tries elaplsed 
+			// so waiting out the time the GW resends the initial message avoids the collision and the ony sideffect is that the 
+			// node received two identical incoming messages which since state did not change have no ill effect
+			wait(4);		
 #endif
 			
 			_msgTmp = _msg;	// Copy message

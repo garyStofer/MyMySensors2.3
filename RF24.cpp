@@ -313,7 +313,8 @@ LOCAL bool RF24_sendMessage(const uint8_t recipient, const void *buf, const uint
 	RF24_stopListening();
 	RF24_openWritingPipe(recipient);
 	RF24_DEBUG(PSTR("RF24:TXM:TO=%" PRIu8 ",LEN=%" PRIu8 "\n"), recipient, len); // send message
-	RF24_flushTX();// flush TX FIFO
+	// flush TX FIFO
+	RF24_flushTX();
 	
 
 	if (noACK) {
@@ -322,9 +323,9 @@ LOCAL bool RF24_sendMessage(const uint8_t recipient, const void *buf, const uint
 	}
 	// this command is affected in clones (e.g. Si24R1):  flipped NoACK bit when using W_TX_PAYLOAD_NO_ACK / W_TX_PAYLOAD
 	// AutoACK is disabled on the broadcasting pipe - NO_ACK prevents resending
-	RF24_spiMultiByteTransfer(RF24_CMD_WRITE_TX_PAYLOAD, (uint8_t *)buf, len, false);
-	
-	RF24_ce(HIGH);		//transmission starts after ~10us, CE high also enables PA+LNA on supported HW
+	(void)RF24_spiMultiByteTransfer(RF24_CMD_WRITE_TX_PAYLOAD, (uint8_t *)buf, len, false);
+	// go, TX starts after ~10us, CE high also enables PA+LNA on supported HW
+	RF24_ce(HIGH);
 	
 	do 
 	{
